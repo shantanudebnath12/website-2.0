@@ -17,7 +17,7 @@ function useBreakpoint() {
   return bp;
 }
 
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useLayoutEffect, useRef, useCallback } = React;
 
 // ── Content ──────────────────────────────────────────────────
 const OWNER = {
@@ -554,13 +554,28 @@ function TimelineCard({ item, isTerminal, align }) {
 // ── Projects carousel ─────────────────────────────────────────
 function ProjectsBento({ rootRef, isTerminal, isMobile }) {
   const [idx, setIdx] = useState(0);
-  const trackRef = useRef(null);
-  const touchXRef = useRef(null);
+  const [dragX, setDragX] = useState(0);
+  const [vpWidth, setVpWidth] = useState(0);
+  const viewportRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const pointerStartXRef = useRef(0);
+  const maxDragRef = useRef(0);
   const navLockRef = useRef(false);
   const n = PROJECTS.length;
+  const GAP = 24;
 
-  // All gesture-based nav goes through here — shared lock prevents double-fire
-  // when trackpad generates both wheel + touch events for the same swipe.
+  // Measure viewport width before first paint so there's no layout flash
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const measure = () => setVpWidth(el.offsetWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Gesture-driven nav — shared 700ms lock stops wheel+touch double-fire
   const navigate = useCallback((dir) => {
     if (navLockRef.current) return;
     navLockRef.current = true;
@@ -568,12 +583,12 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
     setTimeout(() => { navLockRef.current = false; }, 700);
   }, [n]);
 
-  // Arrow buttons and dots are deliberate taps — skip the lock.
+  // Arrow buttons / dots bypass the lock (deliberate taps)
   const go = (d) => setIdx((i) => (i + d + n) % n);
 
-  // Keyboard nav
+  // Keyboard
   useEffect(() => {
-    const el = trackRef.current;
+    const el = viewportRef.current;
     if (!el) return;
     const onKey = (e) => { if (e.key === "ArrowRight") navigate(1); if (e.key === "ArrowLeft") navigate(-1); };
     el.addEventListener("keydown", onKey);
@@ -582,7 +597,7 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
 
   // Trackpad horizontal scroll (non-passive so we can preventDefault)
   useEffect(() => {
-    const el = trackRef.current;
+    const el = viewportRef.current;
     if (!el) return;
     const onWheel = (e) => {
       if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) return;
@@ -593,30 +608,70 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
     return () => el.removeEventListener("wheel", onWheel);
   }, [navigate]);
 
-  // Touch swipe
-  const onTouchStart = (e) => { touchXRef.current = e.touches[0].clientX; };
-  const onTouchEnd = (e) => {
-    if (touchXRef.current === null) return;
-    const dx = touchXRef.current - e.changedTouches[0].clientX;
-    if (Math.abs(dx) > 40) navigate(dx > 0 ? 1 : -1);
-    touchXRef.current = null;
+  // Pointer drag — follows finger/cursor in real-time
+  const onPointerDown = (e) => {
+    if (navLockRef.current) return;
+    isDraggingRef.current = true;
+    maxDragRef.current = 0;
+    pointerStartXRef.current = e.clientX;
+    viewportRef.current?.setPointerCapture(e.pointerId);
+    if (viewportRef.current) viewportRef.current.style.cursor = "grabbing";
   };
+
+  const onPointerMove = (e) => {
+    if (!isDraggingRef.current) return;
+    const dx = e.clientX - pointerStartXRef.current;
+    maxDragRef.current = Math.max(maxDragRef.current, Math.abs(dx));
+    setDragX(dx);
+  };
+
+  const onPointerUp = (e) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    if (viewportRef.current) viewportRef.current.style.cursor = "grab";
+    const dx = e.clientX - pointerStartXRef.current;
+    if (dx < -(vpWidth * 0.25)) navigate(1);
+    else if (dx > vpWidth * 0.25) navigate(-1);
+    setDragX(0); // triggers snap-back transition
+  };
+
+  const slotWidth = vpWidth + GAP;
+  const totalOffset = -(idx * slotWidth) + dragX;
+  // Transition only when not actively dragging so motion follows finger exactly
+  const transition = isDraggingRef.current ? "none" : "transform .52s cubic-bezier(.22,.8,.24,1)";
 
   return (
     <Reveal rootRef={rootRef}>
       <div style={{ marginTop: 32, position: "relative" }}>
         <div
-          ref={trackRef} tabIndex={0}
-          onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}
-          style={{ overflow: "hidden", borderRadius: 18, outline: "none", touchAction: "pan-y" }}
+          ref={viewportRef}
+          tabIndex={0}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          style={{
+            overflow: "hidden", borderRadius: 18, outline: "none",
+            cursor: "grab", userSelect: "none", WebkitUserSelect: "none",
+            touchAction: "pan-y",
+          }}
         >
-          <div style={{ display: "flex", transform: `translateX(-${idx * 100}%)`, transition: "transform .55s cubic-bezier(.22,.8,.24,1)" }}>
+          <div style={{
+            display: "flex", gap: GAP,
+            transform: `translateX(${totalOffset}px)`,
+            transition,
+            willChange: "transform",
+          }}>
             {PROJECTS.map((p, i) => (
-              <a key={p.title} href={p.href || "#"}
+              <a key={p.title}
+                href={p.href || "#"}
                 target={p.href && p.href !== "#" ? "_blank" : undefined}
                 rel="noreferrer"
+                draggable={false}
+                onClick={(e) => { if (maxDragRef.current > 5) e.preventDefault(); }}
                 style={{
-                  flex: "0 0 100%", display: "flex", flexDirection: "column",
+                  flex: `0 0 ${vpWidth}px`,
+                  display: "flex", flexDirection: "column",
                   background: "var(--card)", border: `1px solid var(--cardBorder)`,
                   borderRadius: 18, padding: isMobile ? "24px 20px" : "36px 40px",
                   textDecoration: "none", color: "inherit",
