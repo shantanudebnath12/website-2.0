@@ -558,8 +558,10 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
   const [vpWidth, setVpWidth] = useState(0);
   const viewportRef = useRef(null);
   const isDraggingRef = useRef(false);
+  const activePointerRef = useRef(null);   // tracks which pointerId we're following
   const pointerStartXRef = useRef(0);
   const maxDragRef = useRef(0);
+  const vpWidthRef = useRef(0);            // ref copy so event closures stay current
   const navLockRef = useRef(false);
   const n = PROJECTS.length;
   const GAP = 24;
@@ -568,7 +570,7 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
   useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
-    const measure = () => setVpWidth(el.offsetWidth);
+    const measure = () => { const w = el.offsetWidth; setVpWidth(w); vpWidthRef.current = w; };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -608,9 +610,12 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
     return () => el.removeEventListener("wheel", onWheel);
   }, [navigate]);
 
-  // Pointer drag — follows finger/cursor in real-time
+  // Pointer drag — follows finger/cursor in real-time.
+  // activePointerRef ensures synthetic mouse events that mobile fires after
+  // a touch gesture don't re-open a second drag and double-navigate.
   const onPointerDown = (e) => {
-    if (navLockRef.current) return;
+    if (activePointerRef.current !== null || navLockRef.current) return;
+    activePointerRef.current = e.pointerId;
     isDraggingRef.current = true;
     maxDragRef.current = 0;
     pointerStartXRef.current = e.clientX;
@@ -619,20 +624,21 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
   };
 
   const onPointerMove = (e) => {
-    if (!isDraggingRef.current) return;
+    if (!isDraggingRef.current || e.pointerId !== activePointerRef.current) return;
     const dx = e.clientX - pointerStartXRef.current;
     maxDragRef.current = Math.max(maxDragRef.current, Math.abs(dx));
     setDragX(dx);
   };
 
   const onPointerUp = (e) => {
-    if (!isDraggingRef.current) return;
+    if (!isDraggingRef.current || e.pointerId !== activePointerRef.current) return;
+    activePointerRef.current = null;
     isDraggingRef.current = false;
     if (viewportRef.current) viewportRef.current.style.cursor = "grab";
     const dx = e.clientX - pointerStartXRef.current;
-    if (dx < -(vpWidth * 0.25)) navigate(1);
-    else if (dx > vpWidth * 0.25) navigate(-1);
-    setDragX(0); // triggers snap-back transition
+    if (dx < -(vpWidthRef.current * 0.25)) navigate(1);
+    else if (dx > vpWidthRef.current * 0.25) navigate(-1);
+    setDragX(0);
   };
 
   const slotWidth = vpWidth + GAP;
