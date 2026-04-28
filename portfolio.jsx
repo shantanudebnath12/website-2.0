@@ -556,18 +556,29 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
   const [idx, setIdx] = useState(0);
   const trackRef = useRef(null);
   const touchXRef = useRef(null);
-  const wheelLockedRef = useRef(false);
+  const navLockRef = useRef(false);
   const n = PROJECTS.length;
-  const go = useCallback((d) => setIdx((i) => (i + d + n) % n), [n]);
+
+  // All gesture-based nav goes through here — shared lock prevents double-fire
+  // when trackpad generates both wheel + touch events for the same swipe.
+  const navigate = useCallback((dir) => {
+    if (navLockRef.current) return;
+    navLockRef.current = true;
+    setIdx((i) => (i + dir + n) % n);
+    setTimeout(() => { navLockRef.current = false; }, 700);
+  }, [n]);
+
+  // Arrow buttons and dots are deliberate taps — skip the lock.
+  const go = (d) => setIdx((i) => (i + d + n) % n);
 
   // Keyboard nav
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
-    const onKey = (e) => { if (e.key === "ArrowRight") go(1); if (e.key === "ArrowLeft") go(-1); };
+    const onKey = (e) => { if (e.key === "ArrowRight") navigate(1); if (e.key === "ArrowLeft") navigate(-1); };
     el.addEventListener("keydown", onKey);
     return () => el.removeEventListener("keydown", onKey);
-  }, [go]);
+  }, [navigate]);
 
   // Trackpad horizontal scroll (non-passive so we can preventDefault)
   useEffect(() => {
@@ -576,21 +587,18 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
     const onWheel = (e) => {
       if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) return;
       e.preventDefault();
-      if (wheelLockedRef.current) return;
-      wheelLockedRef.current = true;
-      go(e.deltaX > 0 ? 1 : -1);
-      setTimeout(() => { wheelLockedRef.current = false; }, 650);
+      navigate(e.deltaX > 0 ? 1 : -1);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [go]);
+  }, [navigate]);
 
   // Touch swipe
   const onTouchStart = (e) => { touchXRef.current = e.touches[0].clientX; };
   const onTouchEnd = (e) => {
     if (touchXRef.current === null) return;
     const dx = touchXRef.current - e.changedTouches[0].clientX;
-    if (Math.abs(dx) > 40) go(dx > 0 ? 1 : -1);
+    if (Math.abs(dx) > 40) navigate(dx > 0 ? 1 : -1);
     touchXRef.current = null;
   };
 
