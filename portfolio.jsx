@@ -706,18 +706,18 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
           </div>
         </div>
 
-        <button onClick={() => go(-1)} aria-label="Previous project"
+        {!isMobile && <button onClick={() => go(-1)} aria-label="Previous project"
           style={carouselArrowStyle("left", isMobile)}
           onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent)"; e.currentTarget.style.color = "var(--accentInk)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "var(--card)"; e.currentTarget.style.color = "var(--zoneBInk)"; e.currentTarget.style.borderColor = "var(--cardBorder)"; }}
-        >‹</button>
-        <button onClick={() => go(1)} aria-label="Next project"
+        >‹</button>}
+        {!isMobile && <button onClick={() => go(1)} aria-label="Next project"
           style={carouselArrowStyle("right", isMobile)}
           onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent)"; e.currentTarget.style.color = "var(--accentInk)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "var(--card)"; e.currentTarget.style.color = "var(--zoneBInk)"; e.currentTarget.style.borderColor = "var(--cardBorder)"; }}
-        >›</button>
+        >›</button>}
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: isMobile ? 80 : 22 }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 22 }}>
           {PROJECTS.map((_, i) => (
             <button key={i} aria-label={`Go to project ${i + 1}`} onClick={() => setIdx(i)} style={{
               width: idx === i ? 28 : 8, height: 8, borderRadius: 999,
