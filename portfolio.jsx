@@ -555,21 +555,53 @@ function TimelineCard({ item, isTerminal, align }) {
 function ProjectsBento({ rootRef, isTerminal, isMobile }) {
   const [idx, setIdx] = useState(0);
   const trackRef = useRef(null);
+  const touchXRef = useRef(null);
+  const wheelLockedRef = useRef(false);
   const n = PROJECTS.length;
-  const go = (d) => setIdx((i) => (i + d + n) % n);
+  const go = useCallback((d) => setIdx((i) => (i + d + n) % n), [n]);
 
+  // Keyboard nav
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
     const onKey = (e) => { if (e.key === "ArrowRight") go(1); if (e.key === "ArrowLeft") go(-1); };
     el.addEventListener("keydown", onKey);
     return () => el.removeEventListener("keydown", onKey);
-  }, []);
+  }, [go]);
+
+  // Trackpad horizontal scroll (non-passive so we can preventDefault)
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      if (wheelLockedRef.current) return;
+      wheelLockedRef.current = true;
+      go(e.deltaX > 0 ? 1 : -1);
+      setTimeout(() => { wheelLockedRef.current = false; }, 650);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [go]);
+
+  // Touch swipe
+  const onTouchStart = (e) => { touchXRef.current = e.touches[0].clientX; };
+  const onTouchEnd = (e) => {
+    if (touchXRef.current === null) return;
+    const dx = touchXRef.current - e.changedTouches[0].clientX;
+    if (Math.abs(dx) > 40) go(dx > 0 ? 1 : -1);
+    touchXRef.current = null;
+  };
 
   return (
     <Reveal rootRef={rootRef}>
       <div style={{ marginTop: 32, position: "relative" }}>
-        <div ref={trackRef} tabIndex={0} style={{ overflow: "hidden", borderRadius: 18, outline: "none" }}>
+        <div
+          ref={trackRef} tabIndex={0}
+          onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}
+          style={{ overflow: "hidden", borderRadius: 18, outline: "none", touchAction: "pan-y" }}
+        >
           <div style={{ display: "flex", transform: `translateX(-${idx * 100}%)`, transition: "transform .55s cubic-bezier(.22,.8,.24,1)" }}>
             {PROJECTS.map((p, i) => (
               <a key={p.title} href={p.href || "#"}
@@ -680,6 +712,25 @@ function SkillsBlock({ rootRef, isTerminal, isMobile }) {
 }
 
 // ── Style helpers ─────────────────────────────────────────────
+function CtaLink({ href, children }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <a
+      href={href}
+      onClick={(e) => { e.preventDefault(); window.open(href, '_self'); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        ...ctaStyle(),
+        transform: hovered ? "translateY(-2px) scale(1.03)" : "none",
+        boxShadow: hovered ? "0 12px 28px rgba(0,0,0,.4)" : "0 8px 20px rgba(0,0,0,.25)",
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 function headingStyle(isTerminal, isMobile) {
   return {
     fontSize: isMobile ? (isTerminal ? 26 : 32) : (isTerminal ? 36 : 44),
@@ -799,9 +850,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
           <div style={{ padding: isMobile ? "20px 18px" : "26px 28px", fontSize: isMobile ? 13 : 15, lineHeight: 1.8, overflowX: "auto" }}>
             <TerminalLines />
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 22 }}>
-              <a href={`mailto:${OWNER.email}`} style={ctaStyle()}>
+              <CtaLink href={`mailto:${OWNER.email}`}>
                 <Icon.mail size={16} /><span>./say-hi</span>
-              </a>
+              </CtaLink>
               <SocialLink kind="github" label="github" />
               <SocialLink kind="linkedin" label="linkedin" />
             </div>
@@ -964,9 +1015,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
               </div>
             </Reveal>
             <Reveal rootRef={scrollRef} delay={260}>
-              <a href={`mailto:${OWNER.email}`} style={ctaStyle()}>
+              <CtaLink href={`mailto:${OWNER.email}`}>
                 <Icon.mail size={16} /><span>Send a message</span>
-              </a>
+              </CtaLink>
             </Reveal>
             <div style={{ position: "absolute", bottom: 24, left: 0, right: 0, textAlign: "center", color: "var(--muted)", fontSize: 12 }}>
               Built and designed by {OWNER.name} · All rights reserved. © {new Date().getFullYear()}
