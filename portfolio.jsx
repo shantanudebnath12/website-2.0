@@ -669,29 +669,20 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
             willChange: "transform",
           }}>
             {PROJECTS.map((p, i) => (
-              <a key={p.title}
-                href={p.href || "#"}
-                target={p.href && p.href !== "#" ? "_blank" : undefined}
-                rel="noreferrer"
+              <div key={p.title}
                 draggable={false}
-                onClick={(e) => { if (maxDragRef.current > 5) e.preventDefault(); }}
                 style={{
                   flex: `0 0 ${vpWidth}px`,
                   display: "flex", flexDirection: "column",
                   background: "var(--card)", border: `1px solid var(--cardBorder)`,
                   borderRadius: 18, padding: isMobile ? "24px 20px" : "36px 40px",
-                  textDecoration: "none", color: "inherit",
+                  color: "inherit",
                   minHeight: isMobile ? 300 : 340, boxSizing: "border-box",
                   transition: "border-color .25s, box-shadow .25s",
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 20px 50px rgba(0,0,0,.35)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--cardBorder)"; e.currentTarget.style.boxShadow = "none"; }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, color: "var(--accent)", letterSpacing: 1.8, textTransform: "uppercase", fontWeight: 600 }}>
-                    {isTerminal ? `proj_${String(i + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}` : `Project ${String(i + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}`}
-                  </div>
-                  <Icon.arrowRight size={18} />
+                <div style={{ fontSize: 12, color: "var(--accent)", letterSpacing: 1.8, textTransform: "uppercase", fontWeight: 600, marginBottom: 14 }}>
+                  {isTerminal ? `proj_${String(i + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}` : `Project ${String(i + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}`}
                 </div>
                 <h3 style={{ fontSize: isMobile ? 24 : 34, fontWeight: 700, margin: 0, letterSpacing: -0.6, lineHeight: 1.15 }}>
                   {p.title}
@@ -699,7 +690,7 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
                 <p style={{ color: "var(--muted)", fontSize: isMobile ? 14 : 16, lineHeight: 1.65, marginTop: 14, flex: 1, textWrap: "pretty", maxWidth: 780 }}>
                   {p.desc}
                 </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 22 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 22, marginBottom: 24 }}>
                   {p.stack.map((s) => (
                     <span key={s} style={{
                       fontSize: 12, padding: "6px 12px", borderRadius: 999,
@@ -707,7 +698,31 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
                     }}>{s}</span>
                   ))}
                 </div>
-              </a>
+                {p.href && p.href !== "#" && (
+                  <a
+                    href={p.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 8,
+                      alignSelf: "flex-start",
+                      padding: "10px 18px", borderRadius: 999,
+                      border: `1px solid var(--cardBorder)`,
+                      background: "transparent", color: "var(--accent)",
+                      textDecoration: "none", fontSize: 13, fontWeight: 600,
+                      fontFamily: "inherit", cursor: "pointer",
+                      transition: "background .2s, border-color .2s, transform .2s",
+                      whiteSpace: "nowrap",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent)"; e.currentTarget.style.color = "var(--accentInk)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--accent)"; e.currentTarget.style.borderColor = "var(--cardBorder)"; e.currentTarget.style.transform = "none"; }}
+                  >
+                    <Icon.github size={15} />
+                    View on GitHub
+                  </a>
+                )}
+              </div>
             ))}
           </div>
         </div>
