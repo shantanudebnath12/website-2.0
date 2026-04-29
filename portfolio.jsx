@@ -848,6 +848,7 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
   const [tweaks, setTweaks] = useState({ palette: initialPalette, mode: initialMode });
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
+  const [navVisible, setNavVisible] = useState(true);
 
   const active = useScrollSpy(scrollRef, NAV_ITEMS.map(n => n.toLowerCase()));
 
@@ -874,9 +875,15 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const onScroll = () => setShowTop(el.scrollTop > el.clientHeight * 0.8);
+    let timer;
+    const onScroll = () => {
+      setShowTop(el.scrollTop > el.clientHeight * 0.8);
+      setNavVisible(false);
+      clearTimeout(timer);
+      timer = setTimeout(() => setNavVisible(true), 300);
+    };
     el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
+    return () => { el.removeEventListener("scroll", onScroll); clearTimeout(timer); };
   }, []);
 
   const scrollTo = useCallback((id) => {
@@ -959,6 +966,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
         background: tweaks.mode === "light" ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.25)",
         backdropFilter: "blur(14px) saturate(140%)", WebkitBackdropFilter: "blur(14px) saturate(140%)",
         borderBottom: `1px solid ${pal.cardBorder}`,
+        opacity: navVisible ? 1 : 0,
+        transition: "opacity 0.3s ease",
+        pointerEvents: navVisible ? "auto" : "none",
       }}>
         {isMobile && (
           <>
