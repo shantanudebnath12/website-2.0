@@ -432,77 +432,75 @@ function Section({ id, zone = "A", children, rootRef, label, isMobile }) {
 }
 
 // ── Terminal typing effect ─────────────────────────────────────
+// Driven entirely via direct DOM manipulation — zero React re-renders
+// during the animation so it stays perfectly smooth.
 function TerminalLines() {
-  const LINES = [
-    { p: "$", t: "whoami", kind: "cmd" },
-    { t: OWNER.name, kind: "out" },
-    { t: `${OWNER.role} · ${OWNER.location}`, kind: "out-muted" },
-    { p: "$", t: "cat about.md", kind: "cmd" },
-    { t: `"${OWNER.tagline}"`, kind: "out" },
-    { p: "$", t: "./contact --open", kind: "cmd" },
-  ];
-
-  // lineIdx = which line we're on, charPos = chars typed so far, done = finished
-  const [seq, setSeq] = useState({ lineIdx: 0, charPos: 0, done: false });
+  const containerRef = useRef(null);
 
   useEffect(() => {
-    if (seq.done) return;
-    const line = LINES[seq.lineIdx];
-    if (!line) { setSeq(s => ({ ...s, done: true })); return; }
+    const el = containerRef.current;
+    if (!el) return;
+    let cancelled = false;
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
-    let delay, next;
-    if (line.kind === "cmd" && seq.charPos < line.t.length) {
-      // Type one more character — randomise delay slightly for realism
-      delay = 55 + Math.random() * 65;
-      next = { ...seq, charPos: seq.charPos + 1 };
-    } else if (line.kind === "cmd") {
-      // Finished typing the command — short pause before output appears
-      delay = 180 + Math.random() * 80;
-      next = { ...seq, lineIdx: seq.lineIdx + 1, charPos: 0 };
-    } else {
-      // Output line — print instantly with a tiny inter-line gap
-      delay = 55;
-      next = { ...seq, lineIdx: seq.lineIdx + 1, charPos: 0 };
+    const LINES = [
+      { t: "whoami",                              kind: "cmd" },
+      { t: OWNER.name,                            kind: "out" },
+      { t: `${OWNER.role} · ${OWNER.location}`,  kind: "out-muted" },
+      { t: "cat about.md",                        kind: "cmd" },
+      { t: `"${OWNER.tagline}"`,                  kind: "out" },
+      { t: "./contact --open",                    kind: "cmd" },
+    ];
+
+    // One cursor element moved around the DOM rather than recreated
+    const cursor = document.createElement("span");
+    cursor.style.cssText = "display:inline-block;width:8px;height:0.85em;background:var(--accent);margin-left:2px;vertical-align:text-bottom;animation:pf-blink 0.7s steps(2) infinite";
+
+    async function run() {
+      for (const line of LINES) {
+        if (cancelled) return;
+        const row = document.createElement("div");
+        el.appendChild(row);
+
+        if (line.kind === "cmd") {
+          const prompt = document.createElement("span");
+          prompt.style.color = "var(--accent)";
+          prompt.textContent = "$ ";
+          row.appendChild(prompt);
+
+          const textNode = document.createTextNode("");
+          row.appendChild(textNode);
+          row.appendChild(cursor);
+
+          for (let i = 0; i <= line.t.length; i++) {
+            if (cancelled) return;
+            textNode.nodeValue = line.t.slice(0, i);
+            await wait(48 + Math.random() * 68);
+          }
+
+          await wait(150 + Math.random() * 100);
+          row.removeChild(cursor);
+
+        } else {
+          row.style.color = line.kind === "out-muted" ? "var(--muted)" : "var(--accent)";
+          if (line.kind === "out-muted") row.style.opacity = "0.75";
+          row.textContent = line.t;
+          await wait(45);
+        }
+      }
+
+      if (!cancelled) {
+        const tail = document.createElement("div");
+        tail.appendChild(cursor);
+        el.appendChild(tail);
+      }
     }
 
-    const t = setTimeout(() => setSeq(next), delay);
-    return () => clearTimeout(t);
-  }, [seq]);
+    run();
+    return () => { cancelled = true; };
+  }, []);
 
-  const activeLine = LINES[seq.lineIdx];
-  const isTyping = !seq.done && activeLine?.kind === "cmd";
-
-  return (
-    <div>
-      {LINES.slice(0, seq.lineIdx).map((l, i) => (
-        <div key={i} style={{
-          color: l.kind === "out-muted" ? "var(--muted)" : l.kind === "cmd" ? "var(--zoneAInk)" : "var(--accent)",
-          opacity: l.kind === "out-muted" ? 0.75 : 1,
-        }}>
-          {l.p && <span style={{ color: "var(--accent)", marginRight: 10 }}>{l.p}</span>}
-          {l.t}
-        </div>
-      ))}
-      {isTyping && (
-        <div style={{ color: "var(--zoneAInk)" }}>
-          <span style={{ color: "var(--accent)", marginRight: 10 }}>$</span>
-          {activeLine.t.slice(0, seq.charPos)}
-          <span style={{
-            display: "inline-block", width: 8, height: "0.9em",
-            background: "var(--accent)", marginLeft: 1, verticalAlign: "text-bottom",
-            animation: "pf-blink 0.7s steps(2) infinite",
-          }} />
-        </div>
-      )}
-      {seq.done && (
-        <span style={{
-          display: "inline-block", width: 9, height: 18, background: "var(--accent)",
-          marginLeft: 2, verticalAlign: "text-bottom",
-          animation: "pf-blink 0.7s steps(2) infinite",
-        }} />
-      )}
-    </div>
-  );
+  return <div ref={containerRef} />;
 }
 
 // ── Timeline ──────────────────────────────────────────────────
