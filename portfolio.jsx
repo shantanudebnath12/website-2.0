@@ -441,70 +441,85 @@ function Section({ id, zone = "A", children, rootRef, label, isMobile }) {
 // ── Terminal typing effect ─────────────────────────────────────
 // Driven entirely via direct DOM manipulation — zero React re-renders
 // during the animation so it stays perfectly smooth.
+//
+// The animation node and started-flag live at module level so that
+// any remount of TerminalLines (caused by a parent re-render or
+// Reveal's setShown triggering React 18's concurrent scheduler)
+// never restarts or cancels an already-running animation.
+const _terminalNode = document.createElement("div");
+let _terminalAnimationStarted = false;
+
+function _runTerminalAnimation() {
+  if (_terminalAnimationStarted) return;
+  _terminalAnimationStarted = true;
+
+  const el = _terminalNode;
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  const LINES = [
+    { t: "whoami",                              kind: "cmd" },
+    { t: OWNER.name,                            kind: "out" },
+    { t: `${OWNER.role} · ${OWNER.location}`,  kind: "out-muted" },
+    { t: "cat about.md",                        kind: "cmd" },
+    { t: `"${OWNER.tagline}"`,                  kind: "out" },
+    { t: "./contact --open",                    kind: "cmd" },
+  ];
+
+  // One cursor element moved around the DOM rather than recreated
+  const cursor = document.createElement("span");
+  cursor.style.cssText = "display:inline-block;width:8px;height:0.85em;background:var(--accent);margin-left:2px;vertical-align:text-bottom;animation:pf-blink 0.7s steps(2) infinite";
+
+  async function run() {
+    for (const line of LINES) {
+      const row = document.createElement("div");
+      el.appendChild(row);
+
+      if (line.kind === "cmd") {
+        const prompt = document.createElement("span");
+        prompt.style.color = "var(--accent)";
+        prompt.textContent = "$ ";
+        row.appendChild(prompt);
+
+        const textNode = document.createTextNode("");
+        row.appendChild(textNode);
+        row.appendChild(cursor);
+
+        for (let i = 0; i <= line.t.length; i++) {
+          textNode.nodeValue = line.t.slice(0, i);
+          await wait(48 + Math.random() * 68);
+        }
+
+        await wait(150 + Math.random() * 100);
+        row.removeChild(cursor);
+
+      } else {
+        row.style.color = line.kind === "out-muted" ? "var(--muted)" : "var(--accent)";
+        if (line.kind === "out-muted") row.style.opacity = "0.75";
+        row.textContent = line.t;
+        await wait(45);
+      }
+    }
+
+    const tail = document.createElement("div");
+    tail.appendChild(cursor);
+    el.appendChild(tail);
+  }
+
+  run();
+}
+
 function TerminalLines() {
   const containerRef = useRef(null);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    let cancelled = false;
-    const wait = (ms) => new Promise(r => setTimeout(r, ms));
-
-    const LINES = [
-      { t: "whoami",                              kind: "cmd" },
-      { t: OWNER.name,                            kind: "out" },
-      { t: `${OWNER.role} · ${OWNER.location}`,  kind: "out-muted" },
-      { t: "cat about.md",                        kind: "cmd" },
-      { t: `"${OWNER.tagline}"`,                  kind: "out" },
-      { t: "./contact --open",                    kind: "cmd" },
-    ];
-
-    // One cursor element moved around the DOM rather than recreated
-    const cursor = document.createElement("span");
-    cursor.style.cssText = "display:inline-block;width:8px;height:0.85em;background:var(--accent);margin-left:2px;vertical-align:text-bottom;animation:pf-blink 0.7s steps(2) infinite";
-
-    async function run() {
-      for (const line of LINES) {
-        if (cancelled) return;
-        const row = document.createElement("div");
-        el.appendChild(row);
-
-        if (line.kind === "cmd") {
-          const prompt = document.createElement("span");
-          prompt.style.color = "var(--accent)";
-          prompt.textContent = "$ ";
-          row.appendChild(prompt);
-
-          const textNode = document.createTextNode("");
-          row.appendChild(textNode);
-          row.appendChild(cursor);
-
-          for (let i = 0; i <= line.t.length; i++) {
-            if (cancelled) return;
-            textNode.nodeValue = line.t.slice(0, i);
-            await wait(48 + Math.random() * 68);
-          }
-
-          await wait(150 + Math.random() * 100);
-          row.removeChild(cursor);
-
-        } else {
-          row.style.color = line.kind === "out-muted" ? "var(--muted)" : "var(--accent)";
-          if (line.kind === "out-muted") row.style.opacity = "0.75";
-          row.textContent = line.t;
-          await wait(45);
-        }
-      }
-
-      if (!cancelled) {
-        const tail = document.createElement("div");
-        tail.appendChild(cursor);
-        el.appendChild(tail);
-      }
-    }
-
-    run();
-    return () => { cancelled = true; };
+    // Attach the persistent animation node into this mount's container,
+    // then start the animation (no-op if already running/done).
+    el.appendChild(_terminalNode);
+    _runTerminalAnimation();
+    // On unmount just detach the node — don't cancel the animation.
+    return () => { if (_terminalNode.parentNode === el) el.removeChild(_terminalNode); };
   }, []);
 
   return <div ref={containerRef} />;
