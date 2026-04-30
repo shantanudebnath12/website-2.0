@@ -431,25 +431,50 @@ function Section({ id, zone = "A", children, rootRef, label, isMobile }) {
   );
 }
 
-// ── Terminal typing lines ─────────────────────────────────────
+// ── Terminal typing effect ─────────────────────────────────────
 function TerminalLines() {
-  const lines = [
-    { p: "$", t: `whoami`, kind: "cmd" },
-    { t: `${OWNER.name}`, kind: "out" },
+  const LINES = [
+    { p: "$", t: "whoami", kind: "cmd" },
+    { t: OWNER.name, kind: "out" },
     { t: `${OWNER.role} · ${OWNER.location}`, kind: "out-muted" },
-    { p: "$", t: `cat about.md`, kind: "cmd" },
+    { p: "$", t: "cat about.md", kind: "cmd" },
     { t: `"${OWNER.tagline}"`, kind: "out" },
-    { p: "$", t: `./contact --open`, kind: "cmd" },
+    { p: "$", t: "./contact --open", kind: "cmd" },
   ];
-  const [n, setN] = useState(0);
+
+  // lineIdx = which line we're on, charPos = chars typed so far, done = finished
+  const [seq, setSeq] = useState({ lineIdx: 0, charPos: 0, done: false });
+
   useEffect(() => {
-    if (n >= lines.length) return;
-    const t = setTimeout(() => setN(n + 1), 420);
+    if (seq.done) return;
+    const line = LINES[seq.lineIdx];
+    if (!line) { setSeq(s => ({ ...s, done: true })); return; }
+
+    let delay, next;
+    if (line.kind === "cmd" && seq.charPos < line.t.length) {
+      // Type one more character — randomise delay slightly for realism
+      delay = 55 + Math.random() * 65;
+      next = { ...seq, charPos: seq.charPos + 1 };
+    } else if (line.kind === "cmd") {
+      // Finished typing the command — short pause before output appears
+      delay = 180 + Math.random() * 80;
+      next = { ...seq, lineIdx: seq.lineIdx + 1, charPos: 0 };
+    } else {
+      // Output line — print instantly with a tiny inter-line gap
+      delay = 55;
+      next = { ...seq, lineIdx: seq.lineIdx + 1, charPos: 0 };
+    }
+
+    const t = setTimeout(() => setSeq(next), delay);
     return () => clearTimeout(t);
-  }, [n]);
+  }, [seq]);
+
+  const activeLine = LINES[seq.lineIdx];
+  const isTyping = !seq.done && activeLine?.kind === "cmd";
+
   return (
     <div>
-      {lines.slice(0, n).map((l, i) => (
+      {LINES.slice(0, seq.lineIdx).map((l, i) => (
         <div key={i} style={{
           color: l.kind === "out-muted" ? "var(--muted)" : l.kind === "cmd" ? "var(--zoneAInk)" : "var(--accent)",
           opacity: l.kind === "out-muted" ? 0.75 : 1,
@@ -458,11 +483,22 @@ function TerminalLines() {
           {l.t}
         </div>
       ))}
-      {n >= lines.length && (
+      {isTyping && (
+        <div style={{ color: "var(--zoneAInk)" }}>
+          <span style={{ color: "var(--accent)", marginRight: 10 }}>$</span>
+          {activeLine.t.slice(0, seq.charPos)}
+          <span style={{
+            display: "inline-block", width: 8, height: "0.9em",
+            background: "var(--accent)", marginLeft: 1, verticalAlign: "text-bottom",
+            animation: "pf-blink 0.7s steps(2) infinite",
+          }} />
+        </div>
+      )}
+      {seq.done && (
         <span style={{
           display: "inline-block", width: 9, height: 18, background: "var(--accent)",
           marginLeft: 2, verticalAlign: "text-bottom",
-          animation: "pf-blink 1s steps(2) infinite",
+          animation: "pf-blink 0.7s steps(2) infinite",
         }} />
       )}
     </div>
