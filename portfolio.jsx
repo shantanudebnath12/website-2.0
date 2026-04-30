@@ -17,7 +17,7 @@ function useBreakpoint() {
   return bp;
 }
 
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useLayoutEffect, useRef, useCallback } = React;
 
 // ── Content ──────────────────────────────────────────────────
 const OWNER = {
@@ -113,7 +113,7 @@ const PROJECTS = [
   {
     title: "Portfolio Website",
     desc: "This site — a responsive personal portfolio showcasing skills and projects.",
-    stack: ["React", "TypeScript", "Tailwind CSS"],
+    stack: ["React", "JavaScript", "Babel", "CSS"],
     size: "sm",
     href: "#",
   },
@@ -249,7 +249,7 @@ function Reveal({ children, delay = 0, from = "up", rootRef }) {
       opacity: shown ? 1 : 0,
       transform: shown ? "none" : tx,
       transition: `opacity .7s cubic-bezier(.2,.7,.3,1) ${delay}ms, transform .7s cubic-bezier(.2,.7,.3,1) ${delay}ms`,
-      willChange: "opacity, transform",
+      willChange: shown ? "auto" : "opacity, transform",
     }}>
       {children}
     </div>
@@ -278,14 +278,17 @@ function DotsBG() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = canvas.getContext("2d");
     let w, h, dots, raf;
+    let accentColor = "#4ade80";
     const DPR = Math.min(window.devicePixelRatio || 1, 2);
     function resize() {
       const r = canvas.getBoundingClientRect();
       w = r.width; h = r.height;
       canvas.width = w * DPR; canvas.height = h * DPR;
       ctx.scale(DPR, DPR);
+      accentColor = getComputedStyle(canvas).getPropertyValue("--accent").trim() || "#4ade80";
       const count = Math.floor((w * h) / 9000);
       dots = Array.from({ length: count }, () => ({
         x: Math.random() * w, y: Math.random() * h,
@@ -295,12 +298,11 @@ function DotsBG() {
     }
     function frame() {
       ctx.clearRect(0, 0, w, h);
-      const col = getComputedStyle(canvas).getPropertyValue("--accent").trim() || "#4ade80";
       for (const d of dots) {
         d.x += d.vx; d.y += d.vy;
         if (d.x < 0 || d.x > w) d.vx *= -1;
         if (d.y < 0 || d.y > h) d.vy *= -1;
-        ctx.fillStyle = col;
+        ctx.fillStyle = accentColor;
         ctx.globalAlpha = 0.22;
         ctx.beginPath();
         ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
@@ -309,10 +311,15 @@ function DotsBG() {
       ctx.globalAlpha = 1;
       raf = requestAnimationFrame(frame);
     }
+    function onVisibilityChange() {
+      if (document.hidden) cancelAnimationFrame(raf);
+      else frame();
+    }
     resize(); frame();
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener("visibilitychange", onVisibilityChange); };
   }, []);
   return <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />;
 }
@@ -431,42 +438,81 @@ function Section({ id, zone = "A", children, rootRef, label, isMobile }) {
   );
 }
 
-// ── Terminal typing lines ─────────────────────────────────────
+// ── Terminal typing effect ─────────────────────────────────────
+// Driven entirely via direct DOM manipulation — zero React re-renders
+// during the animation so it stays perfectly smooth.
 function TerminalLines() {
-  const lines = [
-    { p: "$", t: `whoami`, kind: "cmd" },
-    { t: `${OWNER.name}`, kind: "out" },
-    { t: `${OWNER.role} · ${OWNER.location}`, kind: "out-muted" },
-    { p: "$", t: `cat about.md`, kind: "cmd" },
-    { t: `"${OWNER.tagline}"`, kind: "out" },
-    { p: "$", t: `./contact --open`, kind: "cmd" },
-  ];
-  const [n, setN] = useState(0);
+  const containerRef = useRef(null);
+
   useEffect(() => {
-    if (n >= lines.length) return;
-    const t = setTimeout(() => setN(n + 1), 420);
-    return () => clearTimeout(t);
-  }, [n]);
-  return (
-    <div>
-      {lines.slice(0, n).map((l, i) => (
-        <div key={i} style={{
-          color: l.kind === "out-muted" ? "var(--muted)" : l.kind === "cmd" ? "var(--zoneAInk)" : "var(--accent)",
-          opacity: l.kind === "out-muted" ? 0.75 : 1,
-        }}>
-          {l.p && <span style={{ color: "var(--accent)", marginRight: 10 }}>{l.p}</span>}
-          {l.t}
-        </div>
-      ))}
-      {n >= lines.length && (
-        <span style={{
-          display: "inline-block", width: 9, height: 18, background: "var(--accent)",
-          marginLeft: 2, verticalAlign: "text-bottom",
-          animation: "pf-blink 1s steps(2) infinite",
-        }} />
-      )}
-    </div>
-  );
+    const el = containerRef.current;
+    if (!el) return;
+    let cancelled = false;
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+    const LINES = [
+      { t: "whoami",                              kind: "cmd" },
+      { t: OWNER.name,                            kind: "out" },
+      { t: `${OWNER.role} · ${OWNER.location}`,  kind: "out-muted" },
+      { t: "cat about.md",                        kind: "cmd" },
+      { t: `"${OWNER.tagline}"`,                  kind: "out" },
+      { t: "./contact --open",                    kind: "cmd" },
+    ];
+
+    // One cursor element moved around the DOM rather than recreated
+    const cursor = document.createElement("span");
+    cursor.style.cssText = "display:inline-block;width:8px;height:0.85em;background:var(--accent);margin-left:2px;vertical-align:text-bottom;animation:pf-blink 0.7s steps(2) infinite";
+
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    async function run() {
+      for (const line of LINES) {
+        if (cancelled) return;
+        const row = document.createElement("div");
+        el.appendChild(row);
+
+        if (line.kind === "cmd") {
+          const prompt = document.createElement("span");
+          prompt.style.color = "var(--accent)";
+          prompt.textContent = "$ ";
+          row.appendChild(prompt);
+
+          const textNode = document.createTextNode("");
+          row.appendChild(textNode);
+          row.appendChild(cursor);
+
+          if (prefersReduced) {
+            textNode.nodeValue = line.t;
+          } else {
+            for (let i = 0; i <= line.t.length; i++) {
+              if (cancelled) return;
+              textNode.nodeValue = line.t.slice(0, i);
+              await wait(48 + Math.random() * 68);
+            }
+            await wait(150 + Math.random() * 100);
+          }
+          row.removeChild(cursor);
+
+        } else {
+          row.style.color = line.kind === "out-muted" ? "var(--muted)" : "var(--accent)";
+          if (line.kind === "out-muted") row.style.opacity = "0.75";
+          row.textContent = line.t;
+          if (!prefersReduced) await wait(45);
+        }
+      }
+
+      if (!cancelled) {
+        const tail = document.createElement("div");
+        tail.appendChild(cursor);
+        el.appendChild(tail);
+      }
+    }
+
+    run();
+    return () => { cancelled = true; };
+  }, []);
+
+  return <div ref={containerRef} />;
 }
 
 // ── Timeline ──────────────────────────────────────────────────
@@ -554,43 +600,137 @@ function TimelineCard({ item, isTerminal, align }) {
 // ── Projects carousel ─────────────────────────────────────────
 function ProjectsBento({ rootRef, isTerminal, isMobile }) {
   const [idx, setIdx] = useState(0);
-  const trackRef = useRef(null);
+  const [dragX, setDragX] = useState(0);
+  const [vpWidth, setVpWidth] = useState(0);
+  const viewportRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const activePointerRef = useRef(null);   // tracks which pointerId we're following
+  const pointerStartXRef = useRef(0);
+  const maxDragRef = useRef(0);
+  const vpWidthRef = useRef(0);            // ref copy so event closures stay current
+  const navLockRef = useRef(false);
   const n = PROJECTS.length;
+  const GAP = 24;
+
+  // Measure viewport width before first paint so there's no layout flash
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const measure = () => { const w = el.offsetWidth; setVpWidth(w); vpWidthRef.current = w; };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Gesture-driven nav — shared 700ms lock stops wheel+touch double-fire
+  const navigate = useCallback((dir) => {
+    if (navLockRef.current) return;
+    navLockRef.current = true;
+    setIdx((i) => (i + dir + n) % n);
+    setTimeout(() => { navLockRef.current = false; }, 700);
+  }, [n]);
+
+  // Arrow buttons / dots bypass the lock (deliberate taps)
   const go = (d) => setIdx((i) => (i + d + n) % n);
 
+  // Keyboard
   useEffect(() => {
-    const el = trackRef.current;
+    const el = viewportRef.current;
     if (!el) return;
-    const onKey = (e) => { if (e.key === "ArrowRight") go(1); if (e.key === "ArrowLeft") go(-1); };
+    const onKey = (e) => { if (e.key === "ArrowRight") navigate(1); if (e.key === "ArrowLeft") navigate(-1); };
     el.addEventListener("keydown", onKey);
     return () => el.removeEventListener("keydown", onKey);
-  }, []);
+  }, [navigate]);
+
+  // Trackpad horizontal scroll (non-passive so we can preventDefault)
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      navigate(e.deltaX > 0 ? 1 : -1);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [navigate]);
+
+  // Pointer drag — follows finger/cursor in real-time.
+  // activePointerRef ensures synthetic mouse events that mobile fires after
+  // a touch gesture don't re-open a second drag and double-navigate.
+  const onPointerDown = (e) => {
+    if (activePointerRef.current !== null || navLockRef.current) return;
+    activePointerRef.current = e.pointerId;
+    isDraggingRef.current = true;
+    maxDragRef.current = 0;
+    pointerStartXRef.current = e.clientX;
+    viewportRef.current?.setPointerCapture(e.pointerId);
+    if (viewportRef.current) viewportRef.current.style.cursor = "grabbing";
+  };
+
+  const onPointerMove = (e) => {
+    if (!isDraggingRef.current || e.pointerId !== activePointerRef.current) return;
+    const dx = e.clientX - pointerStartXRef.current;
+    maxDragRef.current = Math.max(maxDragRef.current, Math.abs(dx));
+    setDragX(dx);
+  };
+
+  const onPointerUp = (e) => {
+    if (!isDraggingRef.current || e.pointerId !== activePointerRef.current) return;
+    activePointerRef.current = null;
+    isDraggingRef.current = false;
+    if (viewportRef.current) viewportRef.current.style.cursor = "grab";
+    const dx = e.clientX - pointerStartXRef.current;
+    if (dx < -(vpWidthRef.current * 0.25)) navigate(1);
+    else if (dx > vpWidthRef.current * 0.25) navigate(-1);
+    setDragX(0);
+  };
+
+  const slotWidth = vpWidth + GAP;
+  const totalOffset = -(idx * slotWidth) + dragX;
+  // Transition only when not actively dragging so motion follows finger exactly
+  const transition = isDraggingRef.current ? "none" : "transform .52s cubic-bezier(.22,.8,.24,1)";
 
   return (
     <Reveal rootRef={rootRef}>
       <div style={{ marginTop: 32, position: "relative" }}>
-        <div ref={trackRef} tabIndex={0} style={{ overflow: "hidden", borderRadius: 18, outline: "none" }}>
-          <div style={{ display: "flex", transform: `translateX(-${idx * 100}%)`, transition: "transform .55s cubic-bezier(.22,.8,.24,1)" }}>
+        <div
+          ref={viewportRef}
+          tabIndex={0}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onFocus={(e) => { e.currentTarget.style.outline = "2px solid var(--accent)"; e.currentTarget.style.outlineOffset = "3px"; }}
+          onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          style={{
+            overflow: "hidden", borderRadius: 18,
+            cursor: "grab", userSelect: "none", WebkitUserSelect: "none",
+            touchAction: "pan-y",
+          }}
+        >
+          <div style={{
+            display: "flex", gap: GAP,
+            transform: `translateX(${totalOffset}px)`,
+            transition,
+            willChange: "transform",
+          }}>
             {PROJECTS.map((p, i) => (
-              <a key={p.title} href={p.href || "#"}
-                target={p.href && p.href !== "#" ? "_blank" : undefined}
-                rel="noreferrer"
+              <div key={p.title}
+                draggable={false}
                 style={{
-                  flex: "0 0 100%", display: "flex", flexDirection: "column",
+                  flex: `0 0 ${vpWidth}px`,
+                  display: "flex", flexDirection: "column",
                   background: "var(--card)", border: `1px solid var(--cardBorder)`,
                   borderRadius: 18, padding: isMobile ? "24px 20px" : "36px 40px",
-                  textDecoration: "none", color: "inherit",
+                  color: "inherit",
                   minHeight: isMobile ? 300 : 340, boxSizing: "border-box",
                   transition: "border-color .25s, box-shadow .25s",
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 20px 50px rgba(0,0,0,.35)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--cardBorder)"; e.currentTarget.style.boxShadow = "none"; }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, color: "var(--accent)", letterSpacing: 1.8, textTransform: "uppercase", fontWeight: 600 }}>
-                    {isTerminal ? `proj_${String(i + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}` : `Project ${String(i + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}`}
-                  </div>
-                  <Icon.arrowRight size={18} />
+                <div style={{ fontSize: 12, color: "var(--accent)", letterSpacing: 1.8, textTransform: "uppercase", fontWeight: 600, marginBottom: 14 }}>
+                  {isTerminal ? `proj_${String(i + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}` : `Project ${String(i + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}`}
                 </div>
                 <h3 style={{ fontSize: isMobile ? 24 : 34, fontWeight: 700, margin: 0, letterSpacing: -0.6, lineHeight: 1.15 }}>
                   {p.title}
@@ -598,7 +738,7 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
                 <p style={{ color: "var(--muted)", fontSize: isMobile ? 14 : 16, lineHeight: 1.65, marginTop: 14, flex: 1, textWrap: "pretty", maxWidth: 780 }}>
                   {p.desc}
                 </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 22 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 22, marginBottom: 24 }}>
                   {p.stack.map((s) => (
                     <span key={s} style={{
                       fontSize: 12, padding: "6px 12px", borderRadius: 999,
@@ -606,23 +746,47 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
                     }}>{s}</span>
                   ))}
                 </div>
-              </a>
+                {p.href && p.href !== "#" && (
+                  <a
+                    href={p.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 8,
+                      alignSelf: "flex-start",
+                      padding: "10px 18px", borderRadius: 999,
+                      border: `1px solid var(--cardBorder)`,
+                      background: "transparent", color: "var(--accent)",
+                      textDecoration: "none", fontSize: 13, fontWeight: 600,
+                      fontFamily: "inherit", cursor: "pointer",
+                      transition: "background .2s, border-color .2s, transform .2s",
+                      whiteSpace: "nowrap",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent)"; e.currentTarget.style.color = "var(--accentInk)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--accent)"; e.currentTarget.style.borderColor = "var(--cardBorder)"; e.currentTarget.style.transform = "none"; }}
+                  >
+                    <Icon.github size={15} />
+                    View on GitHub
+                  </a>
+                )}
+              </div>
             ))}
           </div>
         </div>
 
-        <button onClick={() => go(-1)} aria-label="Previous project"
+        {!isMobile && <button onClick={() => go(-1)} aria-label="Previous project"
           style={carouselArrowStyle("left", isMobile)}
           onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent)"; e.currentTarget.style.color = "var(--accentInk)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "var(--card)"; e.currentTarget.style.color = "var(--zoneBInk)"; e.currentTarget.style.borderColor = "var(--cardBorder)"; }}
-        >‹</button>
-        <button onClick={() => go(1)} aria-label="Next project"
+        >‹</button>}
+        {!isMobile && <button onClick={() => go(1)} aria-label="Next project"
           style={carouselArrowStyle("right", isMobile)}
           onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent)"; e.currentTarget.style.color = "var(--accentInk)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "var(--card)"; e.currentTarget.style.color = "var(--zoneBInk)"; e.currentTarget.style.borderColor = "var(--cardBorder)"; }}
-        >›</button>
+        >›</button>}
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: isMobile ? 80 : 22 }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 22 }}>
           {PROJECTS.map((_, i) => (
             <button key={i} aria-label={`Go to project ${i + 1}`} onClick={() => setIdx(i)} style={{
               width: idx === i ? 28 : 8, height: 8, borderRadius: 999,
@@ -680,6 +844,24 @@ function SkillsBlock({ rootRef, isTerminal, isMobile }) {
 }
 
 // ── Style helpers ─────────────────────────────────────────────
+function CtaLink({ href, children }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <a
+      href={href}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        ...ctaStyle(),
+        transform: hovered ? "translateY(-2px) scale(1.03)" : "none",
+        boxShadow: hovered ? "0 12px 28px rgba(0,0,0,.4)" : "0 8px 20px rgba(0,0,0,.25)",
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 function headingStyle(isTerminal, isMobile) {
   return {
     fontSize: isMobile ? (isTerminal ? 26 : 32) : (isTerminal ? 36 : 44),
@@ -713,6 +895,7 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
   const [tweaks, setTweaks] = useState({ palette: initialPalette, mode: initialMode });
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
+  const [navVisible, setNavVisible] = useState(true);
 
   const active = useScrollSpy(scrollRef, NAV_ITEMS.map(n => n.toLowerCase()));
 
@@ -737,11 +920,24 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
   };
 
   useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e) => { if (e.key === "Escape") setMenuOpen(false); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [menuOpen]);
+
+  useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const onScroll = () => setShowTop(el.scrollTop > el.clientHeight * 0.8);
+    let timer;
+    const onScroll = () => {
+      setShowTop(el.scrollTop > el.clientHeight * 0.8);
+      setNavVisible(false);
+      clearTimeout(timer);
+      timer = setTimeout(() => setNavVisible(true), 300);
+    };
     el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
+    return () => { el.removeEventListener("scroll", onScroll); clearTimeout(timer); };
   }, []);
 
   const scrollTo = useCallback((id) => {
@@ -757,8 +953,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
   function SocialLink({ kind, label }) {
     const href = kind === "mail" ? `mailto:${OWNER.email}` : kind === "github" ? OWNER.githubUrl : OWNER.linkedinUrl;
     const I = Icon[kind];
+    const ariaLabel = label ? undefined : kind === "mail" ? "Send email" : kind === "github" ? "GitHub profile" : "LinkedIn profile";
     return (
-      <a href={href} target="_blank" rel="noreferrer" style={{
+      <a href={href} target="_blank" rel="noreferrer" aria-label={ariaLabel} style={{
         display: "inline-flex", alignItems: "center", gap: 8,
         width: label ? "auto" : 42, height: 42, padding: label ? "0 14px" : 0,
         borderRadius: label ? 10 : 999,
@@ -791,17 +988,17 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
             borderBottom: `1px solid ${pal.cardBorder}`,
             background: tweaks.mode === "light" ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.04)",
           }}>
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ff5f56" }} />
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ffbd2e" }} />
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#27c93f" }} />
+            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ff5f56" }} aria-hidden="true" />
+            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ffbd2e" }} aria-hidden="true" />
+            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#27c93f" }} aria-hidden="true" />
             <span style={{ marginLeft: 10, fontSize: 12, color: "var(--muted)" }}>shantanu@portfolio — zsh</span>
           </div>
           <div style={{ padding: isMobile ? "20px 18px" : "26px 28px", fontSize: isMobile ? 13 : 15, lineHeight: 1.8, overflowX: "auto" }}>
             <TerminalLines />
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 22 }}>
-              <a href={`mailto:${OWNER.email}`} style={ctaStyle()}>
+              <CtaLink href={`mailto:${OWNER.email}`}>
                 <Icon.mail size={16} /><span>./say-hi</span>
-              </a>
+              </CtaLink>
               <SocialLink kind="github" label="github" />
               <SocialLink kind="linkedin" label="linkedin" />
             </div>
@@ -824,6 +1021,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
         background: tweaks.mode === "light" ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.25)",
         backdropFilter: "blur(14px) saturate(140%)", WebkitBackdropFilter: "blur(14px) saturate(140%)",
         borderBottom: `1px solid ${pal.cardBorder}`,
+        opacity: navVisible ? 1 : 0,
+        transition: "opacity 0.3s ease",
+        pointerEvents: navVisible ? "auto" : "none",
       }}>
         {isMobile && (
           <>
@@ -895,6 +1095,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
         <Section id="home" zone="A" label="01 Home" isMobile={isMobile}>
           <MeshBG />
           <div style={{ position: "relative", textAlign: "left" }}>
+            <h1 style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 }}>
+              {OWNER.name} — {OWNER.role}
+            </h1>
             <TerminalHero isMobile={isMobile} />
           </div>
           <button onClick={() => scrollTo("about")} aria-label="Scroll down" style={{
@@ -964,9 +1167,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
               </div>
             </Reveal>
             <Reveal rootRef={scrollRef} delay={260}>
-              <a href={`mailto:${OWNER.email}`} style={ctaStyle()}>
+              <CtaLink href={`mailto:${OWNER.email}`}>
                 <Icon.mail size={16} /><span>Send a message</span>
-              </a>
+              </CtaLink>
             </Reveal>
             <div style={{ position: "absolute", bottom: 24, left: 0, right: 0, textAlign: "center", color: "var(--muted)", fontSize: 12 }}>
               Built and designed by {OWNER.name} · All rights reserved. © {new Date().getFullYear()}
