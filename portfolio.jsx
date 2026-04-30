@@ -113,7 +113,7 @@ const PROJECTS = [
   {
     title: "Portfolio Website",
     desc: "This site — a responsive personal portfolio showcasing skills and projects.",
-    stack: ["React", "TypeScript", "Tailwind CSS"],
+    stack: ["React", "JavaScript", "Babel", "CSS"],
     size: "sm",
     href: "#",
   },
@@ -251,6 +251,7 @@ function Reveal({ children, delay = 0, from = "up", rootRef }) {
       transition: `opacity .7s cubic-bezier(.2,.7,.3,1) ${delay}ms, transform .7s cubic-bezier(.2,.7,.3,1) ${delay}ms`,
       willChange: "opacity, transform",
     }}>
+
       {children}
     </div>
   );
@@ -280,12 +281,14 @@ function DotsBG() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     let w, h, dots, raf;
+    let accentColor = "#4ade80";
     const DPR = Math.min(window.devicePixelRatio || 1, 2);
     function resize() {
       const r = canvas.getBoundingClientRect();
       w = r.width; h = r.height;
       canvas.width = w * DPR; canvas.height = h * DPR;
       ctx.scale(DPR, DPR);
+      accentColor = getComputedStyle(canvas).getPropertyValue("--accent").trim() || "#4ade80";
       const count = Math.floor((w * h) / 9000);
       dots = Array.from({ length: count }, () => ({
         x: Math.random() * w, y: Math.random() * h,
@@ -295,12 +298,11 @@ function DotsBG() {
     }
     function frame() {
       ctx.clearRect(0, 0, w, h);
-      const col = getComputedStyle(canvas).getPropertyValue("--accent").trim() || "#4ade80";
       for (const d of dots) {
         d.x += d.vx; d.y += d.vy;
         if (d.x < 0 || d.x > w) d.vx *= -1;
         if (d.y < 0 || d.y > h) d.vy *= -1;
-        ctx.fillStyle = col;
+        ctx.fillStyle = accentColor;
         ctx.globalAlpha = 0.22;
         ctx.beginPath();
         ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
@@ -309,10 +311,15 @@ function DotsBG() {
       ctx.globalAlpha = 1;
       raf = requestAnimationFrame(frame);
     }
+    function onVisibilityChange() {
+      if (document.hidden) cancelAnimationFrame(raf);
+      else frame();
+    }
     resize(); frame();
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener("visibilitychange", onVisibilityChange); };
   }, []);
   return <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />;
 }
@@ -690,8 +697,10 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
+          onFocus={(e) => { e.currentTarget.style.outline = "2px solid var(--accent)"; e.currentTarget.style.outlineOffset = "3px"; }}
+          onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           style={{
-            overflow: "hidden", borderRadius: 18, outline: "none",
+            overflow: "hidden", borderRadius: 18,
             cursor: "grab", userSelect: "none", WebkitUserSelect: "none",
             touchAction: "pan-y",
           }}
@@ -706,7 +715,7 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
               <div key={p.title}
                 draggable={false}
                 style={{
-                  flex: `0 0 ${vpWidth}px`,
+                  flex: `0 0 ${isMobile ? vpWidth - 32 : vpWidth}px`,
                   display: "flex", flexDirection: "column",
                   background: "var(--card)", border: `1px solid var(--cardBorder)`,
                   borderRadius: 18, padding: isMobile ? "24px 20px" : "36px 40px",
@@ -835,7 +844,6 @@ function CtaLink({ href, children }) {
   return (
     <a
       href={href}
-      onClick={(e) => { e.preventDefault(); window.open(href, '_self'); }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -907,6 +915,13 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
   };
 
   useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e) => { if (e.key === "Escape") setMenuOpen(false); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [menuOpen]);
+
+  useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let timer;
@@ -933,8 +948,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
   function SocialLink({ kind, label }) {
     const href = kind === "mail" ? `mailto:${OWNER.email}` : kind === "github" ? OWNER.githubUrl : OWNER.linkedinUrl;
     const I = Icon[kind];
+    const ariaLabel = label ? undefined : kind === "mail" ? "Send email" : kind === "github" ? "GitHub profile" : "LinkedIn profile";
     return (
-      <a href={href} target="_blank" rel="noreferrer" style={{
+      <a href={href} target="_blank" rel="noreferrer" aria-label={ariaLabel} style={{
         display: "inline-flex", alignItems: "center", gap: 8,
         width: label ? "auto" : 42, height: 42, padding: label ? "0 14px" : 0,
         borderRadius: label ? 10 : 999,
@@ -967,9 +983,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
             borderBottom: `1px solid ${pal.cardBorder}`,
             background: tweaks.mode === "light" ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.04)",
           }}>
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ff5f56" }} />
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ffbd2e" }} />
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#27c93f" }} />
+            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ff5f56" }} aria-hidden="true" />
+            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ffbd2e" }} aria-hidden="true" />
+            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#27c93f" }} aria-hidden="true" />
             <span style={{ marginLeft: 10, fontSize: 12, color: "var(--muted)" }}>shantanu@portfolio — zsh</span>
           </div>
           <div style={{ padding: isMobile ? "20px 18px" : "26px 28px", fontSize: isMobile ? 13 : 15, lineHeight: 1.8, overflowX: "auto" }}>
@@ -1074,6 +1090,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
         <Section id="home" zone="A" label="01 Home" isMobile={isMobile}>
           <MeshBG />
           <div style={{ position: "relative", textAlign: "left" }}>
+            <h1 style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 }}>
+              {OWNER.name} — {OWNER.role}
+            </h1>
             <TerminalHero isMobile={isMobile} />
           </div>
           <button onClick={() => scrollTo("about")} aria-label="Scroll down" style={{
