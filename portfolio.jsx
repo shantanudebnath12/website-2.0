@@ -29,7 +29,7 @@ const OWNER = {
   githubUrl: "https://github.com/shantanudebnath12",
   linkedin: "linkedin.com/in/shantanu-debnath-512463129",
   linkedinUrl: "https://www.linkedin.com/in/shantanu-debnath-512463129/",
-  location: "Montreal, QC",
+  location: "Montreal, Canada",
 };
 
 const ABOUT = [
@@ -41,7 +41,7 @@ const EXPERIENCE = [
   {
     role: "Data Scientist — Enterprise Data & Data Governance",
     company: "Egon Zehnder",
-    loc: "Montreal, QC",
+    loc: "Montreal, Canada",
     date: "Apr 2023 — Present",
     desc: "Led a team managing global data cleansing and preparation. Managed transition to Azure-based cloud CRM, improving data governance. Spearheaded ML model fine-tuning, NLP, and Semantic Search projects. Integrated enterprise GPT for improved data cleansing efficiency.",
     kind: "work",
@@ -49,7 +49,7 @@ const EXPERIENCE = [
   {
     role: "Data Migration Analyst",
     company: "Concordia University",
-    loc: "Montreal, QC",
+    loc: "Montreal, Canada",
     date: "Jan 2023 — Apr 2023",
     desc: "Managed data migration for Corporate Risk Management division, using SQL and Python for efficient data cleaning and transfer. Collaborated with cross-functional teams to understand and meet data requirements.",
     kind: "work",
@@ -57,7 +57,7 @@ const EXPERIENCE = [
   {
     role: "Associate Data Analyst — Revenue Management",
     company: "Lifehouse",
-    loc: "Montreal, QC",
+    loc: "Montreal, Canada",
     date: "Jan 2022 — Dec 2022",
     desc: "Implemented pricing strategies resulting in 15% increase in average revenue. Developed data models and dashboards using Tableau and Excel, analyzing data across 12 hotels in USA and Mexico.",
     kind: "work",
@@ -65,7 +65,7 @@ const EXPERIENCE = [
   {
     role: "Business Analyst Intern",
     company: "Holt Cypher",
-    loc: "Montreal, QC",
+    loc: "Montreal, Canada",
     date: "Sep 2021 — Dec 2021",
     desc: "Conducted user research, reducing reported issues by 25%. Assisted in developing new features for online banking platform and helped onboard first users of the platform.",
     kind: "work",
@@ -73,7 +73,7 @@ const EXPERIENCE = [
   {
     role: "Business Operations Associate",
     company: "Groupe Tourbee Inc.",
-    loc: "Montreal, QC",
+    loc: "Montreal, Canada",
     date: "Sep 2018 — Oct 2020",
     desc: "Helped Property Management business reach $2,000,000 in Revenue. Developed automation processes, reducing tenant turnover by 25% and increasing occupancy rate by 20%.",
     kind: "work",
@@ -81,7 +81,7 @@ const EXPERIENCE = [
   {
     role: "B.Comm — Business Technology Management",
     company: "Concordia University",
-    loc: "Montreal, QC",
+    loc: "Montreal, Canada",
     date: "Graduated",
     desc: "Bachelor of Commerce with a specialization in Business Technology Management — bridging business strategy and applied technology.",
     kind: "edu",
