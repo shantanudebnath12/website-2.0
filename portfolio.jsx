@@ -730,7 +730,7 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
               <div key={p.title}
                 draggable={false}
                 style={{
-                  flex: `0 0 ${isMobile ? vpWidth - 32 : vpWidth}px`,
+                  flex: `0 0 ${vpWidth}px`,
                   display: "flex", flexDirection: "column",
                   background: "var(--card)", border: `1px solid var(--cardBorder)`,
                   borderRadius: 18, padding: isMobile ? "24px 20px" : "36px 40px",
