@@ -249,8 +249,9 @@ function Reveal({ children, delay = 0, from = "up", rootRef }) {
       opacity: shown ? 1 : 0,
       transform: shown ? "none" : tx,
       transition: `opacity .7s cubic-bezier(.2,.7,.3,1) ${delay}ms, transform .7s cubic-bezier(.2,.7,.3,1) ${delay}ms`,
-      willChange: shown ? "auto" : "opacity, transform",
+      willChange: "opacity, transform",
     }}>
+
       {children}
     </div>
   );
@@ -278,7 +279,6 @@ function DotsBG() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = canvas.getContext("2d");
     let w, h, dots, raf;
     let accentColor = "#4ade80";
@@ -441,75 +441,85 @@ function Section({ id, zone = "A", children, rootRef, label, isMobile }) {
 // ── Terminal typing effect ─────────────────────────────────────
 // Driven entirely via direct DOM manipulation — zero React re-renders
 // during the animation so it stays perfectly smooth.
+//
+// The animation node and started-flag live at module level so that
+// any remount of TerminalLines (caused by a parent re-render or
+// Reveal's setShown triggering React 18's concurrent scheduler)
+// never restarts or cancels an already-running animation.
+const _terminalNode = document.createElement("div");
+let _terminalAnimationStarted = false;
+
+function _runTerminalAnimation() {
+  if (_terminalAnimationStarted) return;
+  _terminalAnimationStarted = true;
+
+  const el = _terminalNode;
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  const LINES = [
+    { t: "whoami",                              kind: "cmd" },
+    { t: OWNER.name,                            kind: "out" },
+    { t: `${OWNER.role} · ${OWNER.location}`,  kind: "out-muted" },
+    { t: "cat about.md",                        kind: "cmd" },
+    { t: `"${OWNER.tagline}"`,                  kind: "out" },
+    { t: "./contact --open",                    kind: "cmd" },
+  ];
+
+  // One cursor element moved around the DOM rather than recreated
+  const cursor = document.createElement("span");
+  cursor.style.cssText = "display:inline-block;width:8px;height:0.85em;background:var(--accent);margin-left:2px;vertical-align:text-bottom;animation:pf-blink 0.7s steps(2) infinite";
+
+  async function run() {
+    for (const line of LINES) {
+      const row = document.createElement("div");
+      el.appendChild(row);
+
+      if (line.kind === "cmd") {
+        const prompt = document.createElement("span");
+        prompt.style.color = "var(--accent)";
+        prompt.textContent = "$ ";
+        row.appendChild(prompt);
+
+        const textNode = document.createTextNode("");
+        row.appendChild(textNode);
+        row.appendChild(cursor);
+
+        for (let i = 0; i <= line.t.length; i++) {
+          textNode.nodeValue = line.t.slice(0, i);
+          await wait(48 + Math.random() * 68);
+        }
+
+        await wait(150 + Math.random() * 100);
+        row.removeChild(cursor);
+
+      } else {
+        row.style.color = line.kind === "out-muted" ? "var(--muted)" : "var(--accent)";
+        if (line.kind === "out-muted") row.style.opacity = "0.75";
+        row.textContent = line.t;
+        await wait(45);
+      }
+    }
+
+    const tail = document.createElement("div");
+    tail.appendChild(cursor);
+    el.appendChild(tail);
+  }
+
+  run();
+}
+
 function TerminalLines() {
   const containerRef = useRef(null);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    let cancelled = false;
-    const wait = (ms) => new Promise(r => setTimeout(r, ms));
-
-    const LINES = [
-      { t: "whoami",                              kind: "cmd" },
-      { t: OWNER.name,                            kind: "out" },
-      { t: `${OWNER.role} · ${OWNER.location}`,  kind: "out-muted" },
-      { t: "cat about.md",                        kind: "cmd" },
-      { t: `"${OWNER.tagline}"`,                  kind: "out" },
-      { t: "./contact --open",                    kind: "cmd" },
-    ];
-
-    // One cursor element moved around the DOM rather than recreated
-    const cursor = document.createElement("span");
-    cursor.style.cssText = "display:inline-block;width:8px;height:0.85em;background:var(--accent);margin-left:2px;vertical-align:text-bottom;animation:pf-blink 0.7s steps(2) infinite";
-
-    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    async function run() {
-      for (const line of LINES) {
-        if (cancelled) return;
-        const row = document.createElement("div");
-        el.appendChild(row);
-
-        if (line.kind === "cmd") {
-          const prompt = document.createElement("span");
-          prompt.style.color = "var(--accent)";
-          prompt.textContent = "$ ";
-          row.appendChild(prompt);
-
-          const textNode = document.createTextNode("");
-          row.appendChild(textNode);
-          row.appendChild(cursor);
-
-          if (prefersReduced) {
-            textNode.nodeValue = line.t;
-          } else {
-            for (let i = 0; i <= line.t.length; i++) {
-              if (cancelled) return;
-              textNode.nodeValue = line.t.slice(0, i);
-              await wait(48 + Math.random() * 68);
-            }
-            await wait(150 + Math.random() * 100);
-          }
-          row.removeChild(cursor);
-
-        } else {
-          row.style.color = line.kind === "out-muted" ? "var(--muted)" : "var(--accent)";
-          if (line.kind === "out-muted") row.style.opacity = "0.75";
-          row.textContent = line.t;
-          if (!prefersReduced) await wait(45);
-        }
-      }
-
-      if (!cancelled) {
-        const tail = document.createElement("div");
-        tail.appendChild(cursor);
-        el.appendChild(tail);
-      }
-    }
-
-    run();
-    return () => { cancelled = true; };
+    // Attach the persistent animation node into this mount's container,
+    // then start the animation (no-op if already running/done).
+    el.appendChild(_terminalNode);
+    _runTerminalAnimation();
+    // On unmount just detach the node — don't cancel the animation.
+    return () => { if (_terminalNode.parentNode === el) el.removeChild(_terminalNode); };
   }, []);
 
   return <div ref={containerRef} />;
@@ -720,7 +730,7 @@ function ProjectsBento({ rootRef, isTerminal, isMobile }) {
               <div key={p.title}
                 draggable={false}
                 style={{
-                  flex: `0 0 ${vpWidth}px`,
+                  flex: `0 0 ${isMobile ? vpWidth - 32 : vpWidth}px`,
                   display: "flex", flexDirection: "column",
                   background: "var(--card)", border: `1px solid var(--cardBorder)`,
                   borderRadius: 18, padding: isMobile ? "24px 20px" : "36px 40px",
@@ -883,6 +893,66 @@ function ctaStyle() {
   };
 }
 
+// ── Social link ───────────────────────────────────────────────
+function SocialLink({ kind, label, cardBorder }) {
+  const href = kind === "mail" ? `mailto:${OWNER.email}` : kind === "github" ? OWNER.githubUrl : OWNER.linkedinUrl;
+  const I = Icon[kind];
+  const ariaLabel = label ? undefined : kind === "mail" ? "Send email" : kind === "github" ? "GitHub profile" : "LinkedIn profile";
+  return (
+    <a href={href} target="_blank" rel="noreferrer" aria-label={ariaLabel} style={{
+      display: "inline-flex", alignItems: "center", gap: 8,
+      width: label ? "auto" : 42, height: 42, padding: label ? "0 14px" : 0,
+      borderRadius: label ? 10 : 999,
+      border: `1px solid ${cardBorder}`,
+      background: "transparent", color: "var(--muted)",
+      textDecoration: "none", fontSize: 13, fontFamily: "inherit", justifyContent: "center",
+      transition: "color .2s, border-color .2s, transform .2s",
+    }}
+    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = cardBorder; e.currentTarget.style.transform = "none"; }}
+    >
+      <I size={18} />
+      {label && <span>{label}</span>}
+    </a>
+  );
+}
+
+// ── Terminal hero window ──────────────────────────────────────
+function TerminalHero({ pal, tweaksMode, isMobile, scrollRef }) {
+  return (
+    <Reveal rootRef={scrollRef}>
+      <div style={{
+        maxWidth: 720, margin: "0 auto",
+        border: `1px solid ${pal.cardBorder}`, borderRadius: 12,
+        background: tweaksMode === "light" ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.35)",
+        backdropFilter: "blur(10px)", boxShadow: "0 20px 60px rgba(0,0,0,.35)",
+        overflow: "hidden", fontFamily: "inherit",
+      }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
+          borderBottom: `1px solid ${pal.cardBorder}`,
+          background: tweaksMode === "light" ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.04)",
+        }}>
+          <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ff5f56" }} aria-hidden="true" />
+          <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ffbd2e" }} aria-hidden="true" />
+          <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#27c93f" }} aria-hidden="true" />
+          <span style={{ marginLeft: 10, fontSize: 12, color: "var(--muted)" }}>shantanu@portfolio — zsh</span>
+        </div>
+        <div style={{ padding: isMobile ? "20px 18px" : "26px 28px", fontSize: isMobile ? 13 : 15, lineHeight: 1.8, overflowX: "auto" }}>
+          <TerminalLines />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 22 }}>
+            <CtaLink href={`mailto:${OWNER.email}`}>
+              <Icon.mail size={16} /><span>./say-hi</span>
+            </CtaLink>
+            <SocialLink kind="github" label="github" cardBorder={pal.cardBorder} />
+            <SocialLink kind="linkedin" label="linkedin" cardBorder={pal.cardBorder} />
+          </div>
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
 // ── Main Portfolio component ──────────────────────────────────
 function Portfolio({ variant = "classic", initialPalette = "green", initialMode = "dark" }) {
   const scopeRef = useRef(null);
@@ -949,64 +1019,6 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
   const fontBody = isTerminal
     ? `"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
     : `Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif`;
-
-  function SocialLink({ kind, label }) {
-    const href = kind === "mail" ? `mailto:${OWNER.email}` : kind === "github" ? OWNER.githubUrl : OWNER.linkedinUrl;
-    const I = Icon[kind];
-    const ariaLabel = label ? undefined : kind === "mail" ? "Send email" : kind === "github" ? "GitHub profile" : "LinkedIn profile";
-    return (
-      <a href={href} target="_blank" rel="noreferrer" aria-label={ariaLabel} style={{
-        display: "inline-flex", alignItems: "center", gap: 8,
-        width: label ? "auto" : 42, height: 42, padding: label ? "0 14px" : 0,
-        borderRadius: label ? 10 : 999,
-        border: `1px solid ${pal.cardBorder}`,
-        background: "transparent", color: "var(--muted)",
-        textDecoration: "none", fontSize: 13, fontFamily: "inherit", justifyContent: "center",
-        transition: "color .2s, border-color .2s, transform .2s",
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = pal.cardBorder; e.currentTarget.style.transform = "none"; }}
-      >
-        <I size={18} />
-        {label && <span>{label}</span>}
-      </a>
-    );
-  }
-
-  function TerminalHero({ isMobile }) {
-    return (
-      <Reveal rootRef={scrollRef}>
-        <div style={{
-          maxWidth: 720, margin: "0 auto",
-          border: `1px solid ${pal.cardBorder}`, borderRadius: 12,
-          background: tweaks.mode === "light" ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.35)",
-          backdropFilter: "blur(10px)", boxShadow: "0 20px 60px rgba(0,0,0,.35)",
-          overflow: "hidden", fontFamily: "inherit",
-        }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
-            borderBottom: `1px solid ${pal.cardBorder}`,
-            background: tweaks.mode === "light" ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.04)",
-          }}>
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ff5f56" }} aria-hidden="true" />
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#ffbd2e" }} aria-hidden="true" />
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#27c93f" }} aria-hidden="true" />
-            <span style={{ marginLeft: 10, fontSize: 12, color: "var(--muted)" }}>shantanu@portfolio — zsh</span>
-          </div>
-          <div style={{ padding: isMobile ? "20px 18px" : "26px 28px", fontSize: isMobile ? 13 : 15, lineHeight: 1.8, overflowX: "auto" }}>
-            <TerminalLines />
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 22 }}>
-              <CtaLink href={`mailto:${OWNER.email}`}>
-                <Icon.mail size={16} /><span>./say-hi</span>
-              </CtaLink>
-              <SocialLink kind="github" label="github" />
-              <SocialLink kind="linkedin" label="linkedin" />
-            </div>
-          </div>
-        </div>
-      </Reveal>
-    );
-  }
 
   return (
     <div ref={scopeRef} style={{
@@ -1098,7 +1110,7 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
             <h1 style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 }}>
               {OWNER.name} — {OWNER.role}
             </h1>
-            <TerminalHero isMobile={isMobile} />
+            <TerminalHero pal={pal} tweaksMode={tweaks.mode} isMobile={isMobile} scrollRef={scrollRef} />
           </div>
           <button onClick={() => scrollTo("about")} aria-label="Scroll down" style={{
             position: "absolute", bottom: 28, left: "50%", transform: "translateX(-50%)",
@@ -1161,9 +1173,9 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
             </Reveal>
             <Reveal rootRef={scrollRef} delay={180}>
               <div style={{ display: "flex", justifyContent: "center", gap: 18, marginBottom: 28 }}>
-                <SocialLink kind="mail" />
-                <SocialLink kind="linkedin" />
-                <SocialLink kind="github" />
+                <SocialLink kind="mail" cardBorder={pal.cardBorder} />
+                <SocialLink kind="linkedin" cardBorder={pal.cardBorder} />
+                <SocialLink kind="github" cardBorder={pal.cardBorder} />
               </div>
             </Reveal>
             <Reveal rootRef={scrollRef} delay={260}>
