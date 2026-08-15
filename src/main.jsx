@@ -1,0 +1,7 @@
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { Portfolio } from './Portfolio.jsx'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <Portfolio variant="terminal" initialPalette="green" initialMode="dark" />
+)
