@@ -1052,13 +1052,18 @@ function Portfolio({ variant = "classic", initialPalette = "green", initialMode 
               const isActive = active === id;
               return (
                 <li key={n}>
-                  <button onClick={() => scrollTo(id)} style={{
-                    padding: "8px 14px", borderRadius: 999, border: "none",
-                    background: "transparent",
-                    color: isActive ? "var(--accent)" : pal.zoneAInk,
-                    fontWeight: isActive ? 600 : 500, fontSize: 13, cursor: "pointer",
-                    letterSpacing: 0.2, fontFamily: "inherit", transition: "color .2s",
-                  }}>{n}</button>
+                  <button onClick={() => scrollTo(id)}
+                    onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.background = "rgba(74,222,128,0.10)"; e.currentTarget.style.color = "var(--accent)"; } }}
+                    onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = pal.zoneAInk; } }}
+                    style={{
+                      padding: "8px 14px", borderRadius: 999, border: "none",
+                      background: isActive ? "rgba(74,222,128,0.15)" : "transparent",
+                      color: isActive ? "var(--accent)" : pal.zoneAInk,
+                      fontWeight: isActive ? 600 : 500, fontSize: 13, cursor: "pointer",
+                      letterSpacing: 0.2, fontFamily: "inherit",
+                      transition: "color .18s, background .18s",
+                      outline: "none",
+                    }}>{n}</button>
                 </li>
               );
             })}
