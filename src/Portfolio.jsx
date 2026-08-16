@@ -423,7 +423,7 @@ function Section({ id, zone = "A", children, rootRef, label, isMobile }) {
     <section data-section={id} data-screen-label={label} style={{
       minHeight: "100dvh", width: "100%",
       background: "transparent", color: ink,
-      position: "relative", display: "flex", flexDirection: "column", justifyContent: "flex-start",
+      position: "relative", display: "flex", flexDirection: "column", justifyContent: "center",
       padding: isMobile ? "84px 20px 52px" : "88px 48px 64px", boxSizing: "border-box",
     }}>
       <div style={{ "--muted": muted, maxWidth: 1100, margin: "0 auto", width: "100%" }}>
